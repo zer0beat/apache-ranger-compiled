@@ -1,0 +1,117 @@
+name: Compile Apache Ranger
+on:   
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: '0 4 * * *'
+
+defaults:
+  run:
+    shell: 'bash -Eeuo pipefail -x {0}'
+
+jobs:
+  discover-new-releases:
+    name: Discover releases
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.discover-releases.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          path: apache-ranger-compiled
+
+      - name: Checkout Apache Ranger repository
+        uses: actions/checkout@v2
+        with:
+          repository: apache/ranger
+          fetch-depth: 0
+          path: ranger
+
+      - name: Discover Apache Ranger releases
+        id: discover-releases
+        run: |
+          compiled=$(cat ./apache-ranger-compiled/compiled)
+          versions=$(git --git-dir ./ranger/.git tag | grep release-ranger- | sed -e "s/release-ranger-//g" | grep -v "${compiled}")
+          matrix=$(jq -cRn '[inputs as $version | {version: $version}] | { include: . }' <<<"$versions")
+          echo "::set-output name=matrix::$matrix"
+  
+  build:
+    name: Build Apache Ranger ${{ matrix.version }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.discover-new-releases.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    needs: discover-new-releases
+    steps:
+      - name: Download Apache Ranger ${{ matrix.version }}
+        id: download-ranger 
+        run: |
+          wget -nv "https://archive.apache.org/dist/ranger/${{ matrix.version }}/apache-ranger-${{ matrix.version }}.tar.gz" -O "apache-ranger.tar.gz"
+          wget -nv "https://archive.apache.org/dist/ranger/${{ matrix.version }}/apache-ranger-${{ matrix.version }}.tar.gz.asc" -O "apache-ranger.tar.gz.asc"
+          wget -nv "https://archive.apache.org/dist/ranger/KEYS" -O "ranger-KEYS"
+          gpg --import ranger-KEYS
+          gpg --verify apache-ranger.tar.gz.asc apache-ranger.tar.gz
+          tar zxf apache-ranger.tar.gz
+          cd apache-ranger-${{ matrix.version }}
+          java_version=$(cat pom.xml | grep -Eo "<java.version.required>.*</java.version.required>" | sed "s/<java.version.required>//g" | sed "s </java.version.required>  g")
+          echo "::set-output name=java-version::$java_version"
+
+      - name: Set up JDK ${{ steps.download-ranger.outputs.java-version }}
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ steps.download-ranger.outputs.java-version }}
+          java-package: jdk
+          architecture: x64
+      
+      - name: Cache local Maven repository
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Build Apache Ranger ${{ matrix.version }}
+        run: |
+          cd apache-ranger-${{ matrix.version }}
+          if dpkg --compare-versions "${{ matrix.version }}" "lt" "2.1.0"; then
+            mvn clean compile package assembly:assembly -DskipTests
+          else
+            mvn clean compile package -DskipTests
+          fi
+        
+      - name: Create release ${{ matrix.version }}
+        id: create-release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ matrix.version }}
+          release_name: Apache Ranger ${{ matrix.version }}
+          draft: false
+          prerelease: false
+        
+      - name: Publish Apache Ranger ${{ matrix.version }}
+        run: |
+          cd apache-ranger-${{ matrix.version }}/target
+          for asset in *.{tar.gz,jar}; do
+            curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" -H "Content-Type: $(file -b --mime-type $asset)" --data-binary @$asset "${{ steps.create-release.outputs.upload_url }}=$(basename $asset)"
+          done
+
+      - name: Checkout Apache Ranger compiled
+        uses: actions/checkout@v2
+        with:
+          path: apache-ranger-compiled
+
+      - name: Check Apache Ranger ${{ matrix.version }} as released
+        run: |
+          cd apache-ranger-compiled
+          git config user.email "z0beat@gmail.com"
+          git config user.name "zer0beat"
+          git pull --rebase origin master
+          echo ${{ matrix.version }} >> ./compiled
+          git add compiled
+          git commit -m "Check Apache Ranger ${{ matrix.version }} as released"
+          git push origin master
