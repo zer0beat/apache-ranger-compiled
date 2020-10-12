@@ -1,8 +1,5 @@
 name: Compile Apache Ranger
-on:   
-  push:
-    branches:
-      - master
+on:
   schedule:
     - cron: '0 4 * * *'
 
