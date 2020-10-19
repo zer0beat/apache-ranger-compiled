@@ -30,8 +30,12 @@ jobs:
         id: discover-releases
         run: |
           compiled=$(cat ./apache-ranger-compiled/compiled)
-          versions=$(git --git-dir ./ranger/.git tag | grep release-ranger- | sed -e "s/release-ranger-//g" | grep -v "${compiled}")
-          matrix=$(jq -cRn '[inputs as $version | {version: $version}] | { include: . }' <<<"$versions")
+          versions=$((git --git-dir ./ranger/.git tag | grep release-ranger- | sed -e "s/release-ranger-//g" | grep -v "${compiled}") || echo "none")
+          if [[ "${versions}" == "none" ]]; then
+            matrix="{}"
+          else
+            matrix=$(jq -cRn '[inputs as $version | {version: $version}] | { include: . }' <<<"$versions")
+          fi
           echo "::set-output name=matrix::$matrix"
   
   build:
