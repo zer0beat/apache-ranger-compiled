@@ -32,7 +32,7 @@ jobs:
           compiled=$(cat ./apache-ranger-compiled/compiled)
           versions=$((git --git-dir ./ranger/.git tag | grep release-ranger- | sed -e "s/release-ranger-//g" | grep -v "${compiled}") || echo "none")
           if [[ "${versions}" == "none" ]]; then
-            matrix="{}"
+            matrix="none"
           else
             matrix=$(jq -cRn '[inputs as $version | {version: $version}] | { include: . }' <<<"$versions")
           fi
@@ -40,6 +40,7 @@ jobs:
   
   build:
     name: Build Apache Ranger ${{ matrix.version }}
+    if: ${{ needs.discover-new-releases.outputs.matrix != 'none' }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJson(needs.discover-new-releases.outputs.matrix) }}
