@@ -1,7 +1,10 @@
 name: Compile Apache Ranger
 on:
+  push:
+    branches:
+      - 'main'
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '0 4 * * 3'
 
 defaults:
   run:
@@ -55,7 +58,12 @@ jobs:
           wget -nv "https://archive.apache.org/dist/ranger/KEYS" -O "ranger-KEYS"
           gpg --import ranger-KEYS
           gpg --verify apache-ranger.tar.gz.asc apache-ranger.tar.gz
-          tar zxf apache-ranger.tar.gz
+          if [[ "${{ matrix.version }}" == "2.2.0" ]]; then 
+            mkdir apache-ranger-${{ matrix.version }}
+            tar zxf apache-ranger.tar.gz -C apache-ranger-${{ matrix.version }}
+          else 
+            tar zxf apache-ranger.tar.gz
+          fi
           cd apache-ranger-${{ matrix.version }}
           java_version=$(cat pom.xml | grep -Eo "<java.version.required>.*</java.version.required>" | sed "s/<java.version.required>//g" | sed "s </java.version.required>  g")
           echo "::set-output name=java-version::$java_version"
@@ -66,6 +74,7 @@ jobs:
           java-version: ${{ steps.download-ranger.outputs.java-version }}
           java-package: jdk
           architecture: x64
+          distribution: temurin
       
       - name: Cache local Maven repository
         uses: actions/cache@v3.0.1
@@ -115,5 +124,5 @@ jobs:
           git pull --rebase origin master
           echo ${{ matrix.version }} >> ./compiled
           git add compiled
-          git commit -m "Check Apache Ranger ${{ matrix.version }} as released"
+          git commit -m "Check Apache Ranger ${{ matrix.version }} as released [skip actions]"
           git push origin master
