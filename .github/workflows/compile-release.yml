@@ -124,8 +124,8 @@ jobs:
           cd apache-ranger-compiled
           git config user.email "z0beat@gmail.com"
           git config user.name "zer0beat"
-          git pull --rebase origin master
+          git pull --rebase origin main
           echo ${{ matrix.version }} >> ./compiled
           git add compiled
           git commit -m "Check Apache Ranger ${{ matrix.version }} as released [skip actions]"
-          git push origin master
+          git push origin main
