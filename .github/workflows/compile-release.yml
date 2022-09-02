@@ -66,6 +66,9 @@ jobs:
           fi
           cd apache-ranger-${{ matrix.version }}
           java_version=$(cat pom.xml | grep -Eo "<java.version.required>.*</java.version.required>" | sed "s/<java.version.required>//g" | sed "s </java.version.required>  g")
+          if [[ "$java_verision" == "1.8" ]]; then
+            java_version=8.0.345+1
+          fi
           echo "::set-output name=java-version::$java_version"
 
       - name: Set up JDK ${{ steps.download-ranger.outputs.java-version }}
